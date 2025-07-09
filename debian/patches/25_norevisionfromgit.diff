@@ -1,0 +1,25 @@
+Description: Do not pull revision info from GIT
+ Stop trying to pull version info from GIT when autoconf is run.
+Author: Andreas Metzler <ametzler@debian.org>
+Bug-Debian: https://bugs.debian.org/1014149
+Origin: vendor
+Forwarded: no
+Last-Update: 2027-06-29
+
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -267,12 +267,12 @@ if [ "$myhost" = "find-version" ]; then
+       [ -n "$tmp" ] && beta=yes
+       rev=$(git rev-parse --short HEAD | tr -d '\n\r')
+       rvd=$((0x$(echo ${rev} | dd bs=1 count=4 2>/dev/null)))
+     else
+       ingit=no
+-      beta=yes
+-      tmp="-unknown"
++      beta=no
++      tmp=""
+       rev="0000000"
+       rvd="0"
+     fi
+ 
+     echo "$package-$vers$tmp:$beta:$ingit:$vers$tmp:$vers:$tmp:$rev:$rvd:"
