@@ -4,8 +4,6 @@
 #ifndef _KSBA_CONFIG_H_INCLUDED
 #define _KSBA_CONFIG_H_INCLUDED
 
-/* Enable gpg-error's strerror macro for W32CE.  */
-#define GPG_ERR_ENABLE_ERRNO_MACROS 1
 
 
 /* Define if building universal (internal helper macro) */
@@ -85,8 +83,7 @@
 /* Define to use the GNU C visibility attribute. */
 #undef KSBA_USE_VISIBILITY
 
-/* Define to the sub-directory in which libtool stores uninstalled libraries.
-   */
+/* Define to the sub-directory where libtool stores uninstalled libraries. */
 #undef LT_OBJDIR
 
 /* Name of package */
