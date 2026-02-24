@@ -1,3 +1,82 @@
+2026-02-23  Werner Koch  <wk@gnupg.org>
+
+	Release 1.6.8.
+	+ commit 39aa8435819df6a97fc751f5e5e45178f033c2ef
+
+
+2026-02-20  NIIBE Yutaka  <gniibe@fsij.org>
+
+	Fix a memory leak in _ksba_ber_decoder_decode.
+	+ commit 86c6e972421a2fdd8d17ad12993891e9d8fb9bc4
+	* src/ber-decoder.c (_ksba_ber_decoder_decode): Clear image.buf after
+	the release.  Release ->root on error.
+
+2026-02-18  Werner Koch  <wk@gnupg.org>
+
+	Do not let the assert do the work of the previous test.
+	+ commit 49a33f98ae4e3fa70e00453e2f6319af7b065d76
+	* src/ocsp.c (parse_response): Return on error.
+
+2026-02-13  Werner Koch  <wk@gnupg.org>
+
+	Fix double increment in DN parser while counting hexdigits.
+	+ commit b9e8f4b3d8d7826e85dff23cbb62c21ade27b06c
+	* src/dn.c (parse_rdn): Turn for-loop into a while-loop.
+
+2026-01-15  NIIBE Yutaka  <gniibe@fsij.org>
+
+	build: Update build-aux and m4 from libgpg-error.
+	+ commit 63df5658b41d16c97a5276837915b0653e24e0a5
+	* build-aux/compile, build-aux/depcomp: Update.
+	* build-aux/ltmain.sh, build-aux/mdate-sh: Likewise.
+	* build-aux/missing, build-aux/texinfo.tex: Likewise.
+	* m4/autobuild.m4, m4/ax_cc_for_build.m4, m4/gpg-error.m4: Likewise.
+	* m4/libtool.m4, m4/ltoptions.m4, m4/ltsugar.m4: Likewise.
+	* m4/ltversion.m4, m4/lt~obsolete.m4: Likewise.
+
+2025-11-28  Werner Koch  <wk@gnupg.org>
+
+	ocsp: Add a hack to allow handling SHA256 based CertIDs.
+	+ commit 2dd35bef663f5ba89260222299aabffd017c4bbd
+	* src/ocsp.h (struct ocsp_reqitem_s): Increase size of hash items.
+	(struct ksba_ocsp_s): Add flag sha256_certid.
+	* src/ocsp.c (oidstr_sha256): New.
+	(ksba_ocsp_set_nonce): Add hack to set/clear this flag.
+	(issuer_name_hash): Add arg use_sha256 and change accordingly.
+	(issuer_key_hash): Ditto.
+	(ksba_ocsp_prepare_request): Make use of the new flag.
+	(parse_single_response): Allow the use of SHA256 CertID items.
+
+	* tests/sha1.c (sha256_hash_buffer): New.  Also add a bunch of othe
+	functions to implement SHA256.
+	* tests/t-ocsp.c (sha256_certid): New flag.
+	(one_request): Use it.
+	(one_response): Ditto.
+	(my_hash_buffer): Support SHA256.
+	(main): Add option --sha256.
+
+2025-09-25  NIIBE Yutaka  <gniibe@fsij.org>
+
+	build: Avoid using -a for test(1).
+	+ commit 8c552d02bb9039007f0d9e6198d48d0d985d7ad3
+	* configure.ac: Use && in shell level, instead of -a of test.
+	*src/ksba.m4: Likewise.
+
+2025-04-23  NIIBE Yutaka  <gniibe@fsij.org>
+
+	Mark with __nonstring__ attribute for GCC 15 and later.
+	+ commit 58b389a192d3a4ca6164df6fa22c0d6a049668f8
+	* src/ksba.h.in (_KSBA_NONSTRING): New.
+	* src/cms.c (oid_messageDigest): Mark with _KSBA_NONSTRING.
+	(oid_signingTime): Likewise.
+
+2025-01-15  NIIBE Yutaka  <gniibe@fsij.org>
+
+	build,tests: Remove WindowsCE support.
+	+ commit b2fccb07a3215085a9f22844e8afe0bc1aebb579
+	* configure.ac (GPG_ERR_ENABLE_ERRNO_MACROS): Remove.
+	* tests/cert-basic.c [__MINGW32CE__]: Clean up.
+
 2024-06-21  Werner Koch  <wk@gnupg.org>
 
 	Release 1.6.7.
