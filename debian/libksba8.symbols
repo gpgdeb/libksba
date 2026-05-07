@@ -48,6 +48,7 @@ libksba.so.8 libksba8 #MINVER#
  ksba_certreq_set_validity@KSBA_0.9 1.2.0
  ksba_certreq_set_writer@KSBA_0.9 1.2.0
  ksba_check_version@KSBA_0.9 1.2.0
+ ksba_cms_add_attribute@KSBA_0.9 1.7.0
  ksba_cms_add_cert@KSBA_0.9 1.2.0
  ksba_cms_add_digest_algo@KSBA_0.9 1.2.0
  ksba_cms_add_recipient@KSBA_0.9 1.2.0
