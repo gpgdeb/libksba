@@ -206,7 +206,7 @@ _ksba_der_copy_tree (AsnNode dst_root,
 
   s = src_root;
   d = dst_root;
-  /* note: we use the is_any flags becuase an inserted copy may have
+  /* Note: we use the is_any flags because an inserted copy may have
      already changed the any tag to the actual type */
   while (s && d && (s->type == d->type || d->flags.is_any))
     {
@@ -386,6 +386,21 @@ _ksba_der_store_sequence (AsnNode node, const unsigned char *buf, size_t len)
 
 
 gpg_error_t
+_ksba_der_store_set_of (AsnNode node, const unsigned char *buf, size_t len)
+{
+  if (node->type == TYPE_ANY)
+    node->type = TYPE_PRE_SET_OF;
+
+  if (node->type == TYPE_SET_OF || node->type == TYPE_PRE_SET_OF)
+    {
+      return store_value (node, buf, len);
+    }
+  else
+    return gpg_error (GPG_ERR_INV_VALUE);
+}
+
+
+gpg_error_t
 _ksba_der_store_null (AsnNode node)
 {
   if (node->type == TYPE_ANY)
@@ -420,6 +435,8 @@ set_nhdr_and_len (AsnNode node, unsigned long length)
     buflen++;
   else if (node->type < 0x1f || node->type == TYPE_PRE_SEQUENCE)
     buflen++;
+  else if(node->type == TYPE_PRE_SET_OF)
+    ;
   else
     {
       never_reached ();
@@ -430,6 +447,8 @@ set_nhdr_and_len (AsnNode node, unsigned long length)
     buflen++; /* end tag */
   else if (node->type == TYPE_NULL /*&& !class*/)
     buflen++; /* NULL tag */
+  else if (node->type == TYPE_PRE_SET_OF)
+    ;
   else if (!length)
     buflen++; /* indefinite length */
   else if (length < 128)
@@ -445,7 +464,7 @@ set_nhdr_and_len (AsnNode node, unsigned long length)
   node->nhdr = buflen;
 }
 
-/* Like above but put now put it into buffer.  return the number of
+/* Like above but now put it into buffer.  Returns the number of
    bytes copied.  There is no need to do length checking here */
 static size_t
 copy_nhdr_and_len (unsigned char *buffer, AsnNode node)
@@ -454,11 +473,16 @@ copy_nhdr_and_len (unsigned char *buffer, AsnNode node)
   int tag, class;
   unsigned long length;
 
+  if (node->type == TYPE_PRE_SET_OF)
+    return node->len;
+
   tag = node->type;
   class = CLASS_UNIVERSAL;
   length = node->len;
 
   if (tag == TYPE_SET_OF)
+    tag = TYPE_SET;
+  else if (tag == TYPE_PRE_SET_OF)
     tag = TYPE_SET;
   else if (tag == TYPE_SEQUENCE_OF)
     tag = TYPE_SEQUENCE;
@@ -466,7 +490,7 @@ copy_nhdr_and_len (unsigned char *buffer, AsnNode node)
     tag = TYPE_SEQUENCE;
   else if (tag == TYPE_TAG)
     {
-      class = CLASS_CONTEXT;  /* Hmmm: we no way to handle other classes */
+      class = CLASS_CONTEXT;  /* Hmmm: no way to handle other classes */
       tag = node->value.v_ulong;
     }
   if (tag < 0x1f)
@@ -583,7 +607,7 @@ _ksba_der_encode_tree (AsnNode root,
   /* set off to zero, so that it can be dumped */
   for (n=root; n ; n = _ksba_asn_walk_tree (root, n))
       n->off = 0;
-  fputs ("DER encoded value Tree:\n", stderr);
+  fprintf (stderr, "%s: DER encoded value tree:\n", __func__);
   _ksba_asn_node_dump_all (root, stderr);
   for (n=root; n ; n = _ksba_asn_walk_tree (root, n))
       n->off = -1;
@@ -598,21 +622,35 @@ _ksba_der_encode_tree (AsnNode root,
     {
       size_t nbytes;
 
-      if (!n->nhdr)
+      if (n->type == TYPE_PRE_SET_OF)
+        ;  /* Copying buffer verbatim.  */
+      else if (!n->nhdr)
         continue;
+
       assert (n->off == -1);
       assert (len < imagelen);
       n->off = len;
-      nbytes = copy_nhdr_and_len (image+len, n);
-      len += nbytes;
-      if ( _ksba_asn_is_primitive (n->type)
-           && n->valuetype == VALTYPE_MEM
-           && n->value.v_mem.len )
+      if (n->type == TYPE_PRE_SET_OF)
         {
+          assert (n->valuetype == VALTYPE_MEM);
           nbytes = n->value.v_mem.len;
           assert (len + nbytes <= imagelen);
           memcpy (image+len, n->value.v_mem.buf, nbytes);
           len += nbytes;
+        }
+      else
+        {
+          nbytes = copy_nhdr_and_len (image+len, n);
+          len += nbytes;
+          if ( _ksba_asn_is_primitive (n->type)
+               && n->valuetype == VALTYPE_MEM
+               && n->value.v_mem.len )
+            {
+              nbytes = n->value.v_mem.len;
+              assert (len + nbytes <= imagelen);
+              memcpy (image+len, n->value.v_mem.buf, nbytes);
+              len += nbytes;
+            }
         }
     }
 

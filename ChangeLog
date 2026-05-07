@@ -1,3 +1,91 @@
+2026-05-07  Werner Koch  <wk@gnupg.org>
+
+	Release 1.7.0.
+	+ commit 941eed831904fb7b3a4d7a3ed55a6842cf6db478
+
+
+2026-05-06  Werner Koch  <wk@gnupg.org>
+
+	New function ksba_cms_add_attribute.
+	+ commit 4cccd024e015a4a5f001fc40df909bea51c7ded4
+	* src/visibility.c (ksba_cms_add_attribute): New.
+	* src/visibility.h (ksba_cms_add_attribute): New mapping.
+	* src/libksba.def: Add new function.
+	* src/libksba.vers: Ditto.
+	* src/ksba.h.in: Ditto.
+	* src/asn1-constants.h (TYPE_PRE_SET_OF): New.
+	* src/asn1-func.c (_ksba_asn_is_primitive): Add TYPE_PRE_SET_OF.
+	(_ksba_asn_node_dump): Ditto.
+	* src/cms.h (struct oidparmlist_s): Add fields 'unprotected' and
+	  'signeridx'.
+	(struct ksba_cms_s): Add field attribute_list.
+	* src/cms.c (ksba_cms_release): Free attribute_list.
+	(ksba_cms_add_smime_capability): Clear new fields.
+	(ksba_cms_add_attribute): New.
+	(build_signed_data_attributes): Implement attribute output.
+	* src/der-encoder.c (_ksba_der_store_set_of): New.
+	(set_nhdr_and_len): Handle TYPE_PRE_SET_OF.
+	(copy_nhdr_and_len): Ditto.
+	(_ksba_der_encode_tree): Encode TYPE_PRE_SET_OF.
+
+	Minor debug output rework.
+	+ commit 1624246505e671ffb2a63979322ffcb53ed0ca2c
+	* src/der-encoder.c (_ksba_der_encode_tree): Improve debug output.
+	(_ksba_der_encode_tree): Use gpgrt log fucntions for debug output.
+
+2026-05-05  Werner Koch  <wk@gnupg.org>
+
+	Various typo and comment fixes and minor test code output cleanup.
+	+ commit 0ef4070116d65a185d2a3884fb738f529c483132
+	* tests/t-common.h (print_sexp): Print space if no delimiter seen.
+
+	Fix other silent truncation of length fields.
+	+ commit 2d120e345537c64ea71ac9c6e796e9ac2e6669b4
+	* src/ber-help.h (MAX_CRL_NUMBER_LENGTH): New.
+	(MAX_NAME_URL_LENGTH): New.
+	* src/crl.c (ksba_crl_get_auth_key_id): Error out if the length is
+	  larger that a given limit.
+	(ksba_crl_get_crl_number): Ditto.
+	(parse_crl_entry): Ditto.
+	* src/name.c (_ksba_name_new_from_der): Ditto.
+	* src/ocsp.c (ksba_ocsp_get_responder_id): Ditto.
+
+	Fix incorrect overflow guard condition in _ksba_ber_read_tl.
+	+ commit 55be6f57b6369bf8e77053b9f3ce616ba29f4bb1
+	* src/ber-help.c (_ksba_ber_read_tl): Remove useless extra overflow
+	  check.
+
+	Fix silent truncation of 64 bit length fields.
+	+ commit c44cc98460ea42e393214dc6e23ff746196baefd
+	* src/ber-help.h (MAX_SERIALNO_LENGTH): New.
+	(MAX_KEYID_DER_LENGTH): New.
+	(MAX_CERT_EXT_LENGTH): New.
+	* src/cms.c (ksba_cms_get_issuer_serial): Error out if the s/n exceeds
+	a limit.
+	* src/cert.c (ksba_cert_get_serial): Ditto.
+	(ksba_cert_get_auth_key_id): Ditto.  This also fixes a possible
+	corrupted s-exp due to an int overlow by a long on systems where this
+	differs.  Also check the keyid length.
+	(get_simple_octet_string_ext): Likewise.
+
+2026-05-03  Werner Koch  <wk@gnupg.org>
+
+	Allow building AUTHENVELOPEDDATA.
+	+ commit 8c640493cbcf53bc18e4442af6280e46f009cfee
+	* src/cms.h (struct ksba_cms_s): Add flag 'auth_mode'.
+	* src/cms.c (ksba_cms_set_content_type): Set flag.
+	(ksba_cms_set_message_digest): Extend to be used for setting the
+	authtag.
+	(ct_build_enveloped_data): Add new state WAITTAG and write the
+	authtag.
+
+2026-04-23  Werner Koch  <wk@gnupg.org>
+
+	crl: Fix minor memory leak in case of a corrupt DER structure.
+	+ commit c8df64fe11e872c5a147fe0487cef6436b61d5b5
+	* src/crl.c (parse_one_extension): Replace a return by a goto to make
+	  sure everything is cleaned up.
+
 2026-02-23  Werner Koch  <wk@gnupg.org>
 
 	Release 1.6.8.
