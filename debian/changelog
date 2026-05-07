@@ -1,3 +1,9 @@
+libksba (1.7.0-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+
+ -- meik michalke <meik.michalke@gnupg.com>  Thu, 07 May 2026 14:40:04 +0200
+
 libksba (1.6.8-1) unstable; urgency=medium
 
   * New upstream release.
