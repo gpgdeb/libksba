@@ -45,11 +45,11 @@ extern "C" {
 /* The version of this header should match the one of the library.  Do
  * not use this symbol in your application; use assuan_check_version
  * instead.  */
-#define KSBA_VERSION "1.6.8"
+#define KSBA_VERSION "1.7.0"
 
 /* The version number of this header.  It may be used to handle minor
  * API incompatibilities.  */
-#define KSBA_VERSION_NUMBER 0x010608
+#define KSBA_VERSION_NUMBER 0x010700
 
 
 
@@ -387,6 +387,9 @@ gpg_error_t ksba_cms_add_cert (ksba_cms_t cms, ksba_cert_t cert);
 gpg_error_t ksba_cms_add_smime_capability (ksba_cms_t cms, const char *oid,
                                            const unsigned char *der,
                                            size_t derlen);
+gpg_error_t ksba_cms_add_attribute (ksba_cms_t cms, int idx,
+                                    const char *oid, int unprotected,
+                                    const unsigned char *der, size_t derlen);
 gpg_error_t ksba_cms_set_message_digest (ksba_cms_t cms, int idx,
                                          const unsigned char *digest,
                                          size_t digest_len);

@@ -637,6 +637,13 @@ ksba_cms_release (ksba_cms_t cms)
       xfree (cms->capability_list);
       cms->capability_list = tmp;
     }
+  while (cms->attribute_list)
+    {
+      struct oidparmlist_s *tmp = cms->attribute_list->next;
+      xfree (cms->attribute_list->oid);
+      xfree (cms->attribute_list);
+      cms->attribute_list = tmp;
+    }
 
   xfree (cms);
 }
@@ -948,6 +955,8 @@ ksba_cms_get_issuer_serial (ksba_cms_t cms, int idx,
           return gpg_error (GPG_ERR_GENERAL);
         }
 
+      if (n->len > MAX_SERIALNO_LENGTH)
+        return gpg_error (GPG_ERR_INV_CERT_OBJ);
       sprintf (numbuf,"(%u:", (unsigned int)n->len);
       numbuflen = strlen (numbuf);
       p = xtrymalloc (numbuflen + n->len + 2);
@@ -1038,10 +1047,12 @@ ksba_cms_get_cert (ksba_cms_t cms, int idx)
 }
 
 
-/*
- * Return the extension attribute messageDigest
- * or for authenvelopeddata the MAC.
- */
+/* In the case of signed data return the extension attribute
+ * messageDigest.  In case of AUTHENVELOPEDDATA return either the MAC
+ * (with IDX 0) or the attributes (with IDX 1).  Note that the parser
+ * currently returns a not-implemented error when it encounters
+ * attributes; we firs need to have some solid sample data to
+ * implement that.   */
 gpg_error_t
 ksba_cms_get_message_digest (ksba_cms_t cms, int idx,
                              char **r_digest, size_t *r_digest_len)
@@ -1744,6 +1755,7 @@ ksba_cms_set_content_type (ksba_cms_t cms, int what, ksba_content_type_t type)
       cms->content.oid     = oid;
       cms->content.ct      = content_handlers[i].ct;
       cms->content.handler = content_handlers[i].build_handler;
+      cms->auth_mode       = (type == KSBA_CT_AUTHENVELOPED_DATA);
     }
   else
     {
@@ -1888,6 +1900,8 @@ ksba_cms_add_smime_capability (ksba_cms_t cms, const char *oid,
   opl = xtrymalloc (sizeof *opl + derlen - 1);
   if (!opl)
     return gpg_error_from_errno (errno);
+  opl->unprotected = 0;
+  opl->signeridx = 0;
   opl->next = NULL;
   opl->oid = xtrystrdup (oid);
   if (!opl->oid)
@@ -1913,24 +1927,85 @@ ksba_cms_add_smime_capability (ksba_cms_t cms, const char *oid,
   return 0;
 }
 
+/* Add an arbitrary attribute to the message.  CMS is the context, OID
+ * the object identifier of the attribute and (DER,DERLEN) is the
+ * DER-encoded content which is put into a SET.  Thus DER may be a
+ * straight concatenation of ASN.1 objects w/o the outer container.
+ *
+ * The attribute is store stored for the signer with IDX or with an
+ * IDX of -1 for all signers.  The index of a signer is determined by
+ * the sequence of ksba_cms_add_signer() calls; the first signer has
+ * the index 0.
+ *
+ * If UNPROTECTED is set the attribute will be stored in the unsigned
+ * section.
+ *
+ * No merging of attributes is done, thus the caller should not call it
+ * twice with the same OID.  Note that this function is a generalized
+ * version of ksba_cms_add_smime_capability.
+ *
+ * The function returns 0 on success or an error code.
+ */
+gpg_error_t
+ksba_cms_add_attribute (ksba_cms_t cms, int idx,
+                        const char *oid, int unprotected,
+                        const unsigned char *der, size_t derlen)
+{
+  gpg_error_t err;
+  struct oidparmlist_s *opl;
+
+  if (!cms || !oid || unprotected < 0 || unprotected > 1 || !der || !derlen)
+    return gpg_error (GPG_ERR_INV_VALUE);
+  if (idx < -1)
+    return gpg_error (GPG_ERR_INV_INDEX);
+  else if (idx >= 0)
+    {
+      struct certlist_s *cl;
+      int i;
+
+      for (i=0, cl = cms->cert_list; cl; cl = cl->next, i++)
+        if (i == idx)
+          break;
+      if (!cl)
+        return gpg_error (GPG_ERR_INV_INDEX);
+    }
+
+  opl = xtrymalloc (sizeof *opl + derlen - 1);
+  if (!opl)
+    return gpg_error_from_syserror ();
+  opl->unprotected = unprotected;
+  opl->signeridx = idx;
+  opl->oid = xtrystrdup (oid);
+  if (!opl->oid)
+    {
+      err = gpg_error_from_syserror ();
+      xfree (opl);
+      return err;
+    }
+  opl->parmlen = derlen;
+  memcpy (opl->parm, der, derlen);
+
+  opl->next = cms->attribute_list;
+  cms->attribute_list = opl;
+
+  return 0;
+}
 
 
-/**
- * ksba_cms_set_message_digest:
- * @cms: A CMS object
- * @idx: The index of the signer
- * @digest: a message digest
- * @digest_len: the length of the message digest
+/* If CMS is used for signed data, this function sets the message
+ * digest (DIGEST,DIGEST_LEN) into the signedAttributes of the signer
+ * with the index IDX.  That index of the signer is determined by the
+ * sequence of ksba_cms_add_signer calls; the first signer has the
+ * index 0. CMS is the usual context.  This function is to be used
+ * when the hash value of the data has been computed and before the
+ * create function requests the sign operation.
  *
- * Set a message digest into the signedAttributes of the signer with
- * the index IDX.  The index of a signer is determined by the sequence
- * of ksba_cms_add_signer() calls; the first signer has the index 0.
- * This function is to be used when the hash value of the data has
- * been calculated and before the create function requests the sign
- * operation.
+ * If CMS is used for AUTHENVELOPEDDATA this function sets the
+ * authentication tag or MAC to (DIGEST,DIGEST_LEN).  IDX must be 0 in
+ * this case.  The function is to be used when the build function
+ * stopped with KSBA_SR_NEED_SIG.
  *
- * Return value: 0 on success or an error code
- **/
+ * Return value: 0 on success or an error code */
 gpg_error_t
 ksba_cms_set_message_digest (ksba_cms_t cms, int idx,
                              const unsigned char *digest, size_t digest_len)
@@ -1939,6 +2014,27 @@ ksba_cms_set_message_digest (ksba_cms_t cms, int idx,
 
   if (!cms || !digest)
     return gpg_error (GPG_ERR_INV_VALUE);
+
+  /* Special processing for AUTHENVELOPEDDATA to set the MAC/authtag.  */
+  if (cms->content.ct == KSBA_CT_AUTHENVELOPED_DATA)
+    {
+      /* (1024 is just an arbitrary value to catch a faulty caller). */
+      if (!digest_len || digest_len > 1024)
+        return gpg_error (GPG_ERR_INV_VALUE);
+      if (idx != 0)
+        return gpg_error (GPG_ERR_INV_INDEX);
+
+      xfree (cms->authdata.mac);
+      cms->authdata.mac_len = digest_len;
+      cms->authdata.mac = xtrymalloc (digest_len);
+      if (!cms->authdata.mac)
+        return gpg_error_from_syserror ();
+      memcpy (cms->authdata.mac, digest, digest_len);
+
+      return 0;
+    }
+
+  /* Standard processing for signed data.  */
   if (!digest_len || digest_len > DIM(cl->msg_digest))
     return gpg_error (GPG_ERR_INV_VALUE);
   if (idx < 0)
@@ -2802,7 +2898,10 @@ store_smime_capability_sequence (AsnNode node,
 
   for (cap=capabilities; cap; cap = cap->next)
     {
-      /* (avoid writing duplicates) */
+      /* Note that we do not use the unprotected and signeridx fields
+       * here.  */
+
+      /* We want to avoid writing duplicates. */
       for (cap2=capabilities; cap2 != cap; cap2 = cap2->next)
         {
           if (!strcmp (cap->oid, cap2->oid)
@@ -2882,12 +2981,12 @@ build_signed_data_attributes (ksba_cms_t cms)
   struct certlist_s *certlist;
   struct oidlist_s *digestlist;
   struct signer_info_s *si, **si_tail;
+  struct oidparmlist_s *opl;
   AsnNode root = NULL;
-  struct attrarray_s attrarray[4];
+  struct attrarray_s *attrarray = NULL;
+  unsigned int attrsize;
   int attridx = 0;
   int i;
-
-  memset (attrarray, 0, sizeof (attrarray));
 
   /* Write the End tag */
   err = _ksba_ber_write_tl (cms->writer, 0, 0, 0, 0);
@@ -2897,6 +2996,25 @@ build_signed_data_attributes (ksba_cms_t cms)
   if (cms->signer_info)
     return gpg_error (GPG_ERR_CONFLICT); /* This list must be empty at
                                             this point. */
+
+  /* Allocate four slots for the standard attributes:
+   *  - msg_digest
+   *  - inner_content_type
+   *  - signing time (optional)
+   *  - s/mime capabilities (optional)
+   */
+  attrsize = 4;
+  /* Add more slots for extra attributes.  */
+  for (opl = cms->attribute_list; opl; opl = opl->next)
+    attrsize++;
+
+  attrarray = xtrycalloc (attrsize, sizeof *attrarray);
+  if (!attrarray)
+    {
+      err = gpg_error_from_syserror ();
+      goto leave;
+    }
+
 
   /* Write optional certificates */
   if (cms->cert_info_list)
@@ -2964,7 +3082,7 @@ build_signed_data_attributes (ksba_cms_t cms)
           xfree (attrarray[i].image);
         }
       attridx = 0;
-      memset (attrarray, 0, sizeof (attrarray));
+      memset (attrarray, 0, attrsize * sizeof *attrarray);
 
       if (!digestlist)
         {
@@ -3124,6 +3242,52 @@ build_signed_data_attributes (ksba_cms_t cms)
           attridx++;
         }
 
+      for (opl = cms->attribute_list; opl; opl = opl->next)
+        {
+          if (opl->unprotected)
+            continue;
+          if (!(opl->signeridx == -1 || opl->signeridx == signer))
+            continue;
+          attr = _ksba_asn_expand_tree (cms_tree->parse_tree,
+                                        "CryptographicMessageSyntax.Attribute");
+          if (!attr)
+            {
+	      err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+	      goto leave;
+	    }
+          n = _ksba_asn_find_node (attr, "Attribute.attrType");
+          if (!n)
+            {
+	      err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+	      goto leave;
+	    }
+          err = _ksba_der_store_oid (n, opl->oid);
+          if (err)
+            goto leave;
+          n = _ksba_asn_find_node (attr, "Attribute.attrValues");
+          if (!n || !n->down)
+            {
+	      err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+	      goto leave;
+	    }
+          n = n->down;
+          /* gpgrt_log_printhex (opl->parm, opl->parmlen, */
+          /*                     "signer %d, oid=%s der=", signer, opl->oid); */
+          err = _ksba_der_store_set_of (n, opl->parm, opl->parmlen);
+          if (err)
+            goto leave;
+
+          err = _ksba_der_encode_tree (attr, &image, &imagelen);
+          if (err)
+            goto leave;
+
+          assert (attridx < attrsize);
+          attrarray[attridx].root = attr;
+          attrarray[attridx].image = image;
+          attrarray[attridx].imagelen = imagelen;
+          attridx++;
+        }
+
       /* Arggh.  That silly ASN.1 DER encoding rules: We need to sort
          the SET values. */
       qsort (attrarray, attridx, sizeof (struct attrarray_s),
@@ -3148,7 +3312,7 @@ build_signed_data_attributes (ksba_cms_t cms)
 	  goto leave;
 	}
 
-      assert (attridx <= DIM (attrarray));
+      assert (attridx <= attrsize);
       for (i=0; i < attridx; i++)
         {
           if (i)
@@ -3496,8 +3660,8 @@ ct_build_signed_data (ksba_cms_t cms)
     state = sDATAREADY;
   else if (stop_reason == KSBA_SR_NEED_SIG)
     {
-      if (!cms->sig_val)
-        err = gpg_error (GPG_ERR_MISSING_ACTION); /* No ksba_cms_set_sig_val () called */
+      if (!cms->sig_val)  /* No ksba_cms_set_sig_val () called */
+        err = gpg_error (GPG_ERR_MISSING_ACTION);
       state = sGOTSIG;
     }
   else if (stop_reason == KSBA_SR_RUNNING)
@@ -3820,12 +3984,15 @@ build_enveloped_data_header (ksba_cms_t cms)
 }
 
 
+
+/* Note that this function also handles authenveloped_data.  */
 static gpg_error_t
 ct_build_enveloped_data (ksba_cms_t cms)
 {
   enum {
     sSTART,
     sINDATA,
+    sWAITTAG,
     sREST,
     sERROR
   } state = sERROR;
@@ -3841,7 +4008,13 @@ ct_build_enveloped_data (ksba_cms_t cms)
   else if (stop_reason == KSBA_SR_BEGIN_DATA)
     state = sINDATA;
   else if (stop_reason == KSBA_SR_END_DATA)
-    state = sREST;
+    state = cms->auth_mode? sWAITTAG : sREST;
+  else if (stop_reason == KSBA_SR_NEED_SIG)
+    {
+      if (!cms->authdata.mac) /* ksba_cms_set_message_digest not called.  */
+        err = gpg_error (GPG_ERR_MISSING_ACTION);
+      state = sREST;
+    }
   else if (stop_reason == KSBA_SR_RUNNING)
     err = gpg_error (GPG_ERR_INV_STATE);
   else if (stop_reason)
@@ -3855,12 +4028,26 @@ ct_build_enveloped_data (ksba_cms_t cms)
     err = build_enveloped_data_header (cms);
   else if (state == sINDATA)
     err = write_encrypted_cont (cms);
+  else if (state == sWAITTAG)
+    ; /* Nothing to do here.  */
   else if (state == sREST)
     {
       /* SPHINX does not allow for unprotectedAttributes */
 
-      /* Write 5 end tags */
+      /* Write an end tag.  */
       err = _ksba_ber_write_tl (cms->writer, 0, 0, 0, 0);
+
+      /* In auth_mode write the tag.  */
+      if (!err && cms->auth_mode)
+        {
+          err = _ksba_ber_write_tl (cms->writer, TYPE_OCTET_STRING,
+                                    CLASS_UNIVERSAL, 0, cms->authdata.mac_len);
+          if (!err)
+            err = ksba_writer_write (cms->writer,
+                                     cms->authdata.mac, cms->authdata.mac_len);
+        }
+
+      /* Write remaining end tags */
       if (!err)
         err = _ksba_ber_write_tl (cms->writer, 0, 0, 0, 0);
       if (!err)
@@ -3882,6 +4069,10 @@ ct_build_enveloped_data (ksba_cms_t cms)
   else if (state == sINDATA)
     { /* tell the user that we wrote everything */
       stop_reason = KSBA_SR_END_DATA;
+    }
+  else if (state == sWAITTAG)
+    {
+      stop_reason = KSBA_SR_NEED_SIG;
     }
   else if (state == sREST)
     {
