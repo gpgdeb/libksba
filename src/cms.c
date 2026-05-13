@@ -1047,11 +1047,117 @@ ksba_cms_get_cert (ksba_cms_t cms, int idx)
 }
 
 
+/* Return the signed or unsigned attribute for SIGNER at IDX.  Set
+ * UNPROTECTED to return the unsigned attributes of the signer.  The
+ * caller must release the values returned at R_OID, R_DER, and
+ * R_DERLEN.  On error or if no value was found a NULL is stored
+ * there.  R_OID always receives a value (if not passed as NULL) but
+ * R_DER might receive NULL.
+ *
+ * An error code GPG_ERR_NOT_FOUND indicates that there is no signer
+ * with the signer index SIGNER.  An error code GPG_ERR_EOF indicates
+ * that there is no attribute under the index IDX.
+ *
+ * To enumerate all signed attributes this pseudo code can be used:
+ *
+ * char *oid = NULL;
+ * unsigned char *der = NULL;
+ * size_t derlen;
+ * for (signer=0; signer >= 0; signer++)
+ *   for (idx=0; idx >= 0; idx++)
+ *     {
+ *       ksba_free (oid);
+ *       ksba_free (der);
+ *       err = ksba_cms_get_attribute (cms, signer, idx, 0,&oid,&der,&derlen);
+ *       if (gpg_err_code (err) == GPG_ERR_EOF)
+ *         idx = -2;
+ *       else if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
+ *         idx = signer = -2;
+ *       else
+ *         handle_err_or_process_values (err, oid, der, derlen);
+ *     }
+ * ksba_free (oid);
+ * ksba_free (der);
+ */
+gpg_error_t
+ksba_cms_get_attribute (ksba_cms_t cms, int signer, int idx, int unprotected,
+                        char **r_oid, unsigned char **r_der, size_t *r_derlen)
+{
+  gpg_error_t err;
+  AsnNode topnode, node, n;
+  struct signer_info_s *si;
+
+  if (r_oid)
+    *r_oid = NULL;
+  if (r_der)
+    *r_der = NULL;
+  if (r_derlen)
+    *r_derlen = 0;
+
+  if (!cms)
+    return gpg_error (GPG_ERR_INV_VALUE);
+  if (!cms->signer_info)
+    return gpg_error (GPG_ERR_NO_DATA);
+  if (signer < 0 || idx < 0)
+    return gpg_error (GPG_ERR_INV_INDEX);
+
+  for (si=cms->signer_info; si && signer; si = si->next, signer-- )
+    ;
+  if (!si)
+    return gpg_error (GPG_ERR_NOT_FOUND); /* No more signers */
+
+  node = _ksba_asn_find_node (si->root,
+                              unprotected? "SignerInfo.unsignedAttrs"
+                              /* */      : "SignerInfo.signedAttrs");
+  topnode = node;
+  if (node && node->type == TYPE_TAG)
+    node = node->down;
+  else
+    node = NULL; /* Bad CMS: not a context tag - ignore this.  */
+  for (; node && idx >= 0; node = _ksba_asn_walk_tree (topnode, node))
+    {
+      if (node->type == TYPE_SEQUENCE
+          && (n = node->down) && n->type == TYPE_OBJECT_ID
+          && n->off != -1 && n->right && n->right->type == TYPE_SET_OF)
+        {
+          if (idx--)
+            continue; /* Not yet at the desired index.  */
+          if (r_oid)
+            {
+              *r_oid = _ksba_oid_to_str (si->image + n->off + n->nhdr, n->len);
+              if (!*r_oid)
+                return gpg_error_from_syserror ();
+            }
+          n = n->right;  /* Point to the set.  */
+          if (n->off != -1 && n->len && r_der && r_derlen)
+            {
+              *r_der = xtrymalloc (n->len);
+              if (!*r_der)
+                {
+                  err = gpg_error_from_syserror ();
+                  if (r_oid)
+                    {
+                      xfree (*r_oid);
+                      *r_oid = NULL;
+                    }
+                  return err;
+                }
+              memcpy (*r_der, si->image + n->off + n->nhdr, n->len);
+              *r_derlen = n->len;
+            }
+          return 0;
+        }
+    }
+
+  return gpg_error (GPG_ERR_EOF); /* No more signed attributes for signer. */
+}
+
+
 /* In the case of signed data return the extension attribute
  * messageDigest.  In case of AUTHENVELOPEDDATA return either the MAC
  * (with IDX 0) or the attributes (with IDX 1).  Note that the parser
  * currently returns a not-implemented error when it encounters
- * attributes; we firs need to have some solid sample data to
+ * attributes; we first need to have some solid sample data to
  * implement that.   */
 gpg_error_t
 ksba_cms_get_message_digest (ksba_cms_t cms, int idx,
@@ -1122,8 +1228,8 @@ ksba_cms_get_message_digest (ksba_cms_t cms, int idx,
                                  oid_messageDigest, DIM(oid_messageDigest)))
     return gpg_error (GPG_ERR_DUP_VALUE);
 
-  /* the value is is a SET OF OCTECT STRING but the set must have
-     excactly one OCTECT STRING.  (rfc2630 11.2) */
+  /* The value is is a SET OF OCTECT STRING but the set must have
+     excactly one OCTECT STRING.  (rfc5652 11.2) */
   if ( !(n->type == TYPE_SET_OF && n->down
          && n->down->type == TYPE_OCTET_STRING && !n->down->right))
     return gpg_error (GPG_ERR_INV_CMS_OBJ);
@@ -1177,7 +1283,7 @@ ksba_cms_get_signing_time (ksba_cms_t cms, int idx, ksba_isotime_t r_sigtime)
     return gpg_error (GPG_ERR_DUP_VALUE);
 
   /* the value is is a SET OF CHOICE but the set must have
-     excactly one CHOICE of generalized or utctime.  (rfc2630 11.3) */
+     excactly one CHOICE of generalized or utctime.  (rfc5652 11.3) */
   if ( !(n->type == TYPE_SET_OF && n->down
          && (n->down->type == TYPE_GENERALIZED_TIME
              || n->down->type == TYPE_UTC_TIME)
@@ -1236,8 +1342,6 @@ ksba_cms_get_sigattr_oids (ksba_cms_t cms, int idx,
     {
       char *line, *p;
 
-      /* the value is is a SET OF OBJECT ID but the set must have
-         excactly one OBJECT ID.  (rfc2630 11.1) */
       if ( !(n->type == TYPE_SET_OF && n->down
              && n->down->type == TYPE_OBJECT_ID && !n->down->right))
         {
@@ -3360,8 +3464,6 @@ build_signed_data_attributes (ksba_cms_t cms)
 }
 
 
-
-
 /* The user has calculated the signatures and we can therefore write
    everything left over to do. */
 static gpg_error_t
@@ -3374,9 +3476,15 @@ build_signed_data_rest (ksba_cms_t cms)
   struct oidlist_s *digestlist;
   struct signer_info_s *si;
   struct sig_val_s *sv;
+  struct oidparmlist_s *opl;
   ksba_writer_t tmpwrt = NULL;
   AsnNode root = NULL;
   ksba_der_t dbld = NULL;
+  struct attrarray_s *attrarray = NULL;
+  int attridx = 0;
+  unsigned int attrsize;
+  AsnNode attr = NULL;
+  int i;
 
   /* Now we can really write the signer info */
   err = ksba_asn_create_tree ("cms", &cms_tree);
@@ -3582,6 +3690,116 @@ build_signed_data_rest (ksba_cms_t cms)
             goto leave;
         }
 
+      /* If we have any unsigned attributes we can now insert them
+       * directly into the tree.  Note that the list may contain
+       * different (i.e. more) unsigned items than when the signed
+       * attributes were hashed.  */
+      for (attrsize = 0, opl = cms->attribute_list; opl; opl = opl->next)
+        {
+          if (!opl->unprotected)
+            continue;
+          if (!(opl->signeridx == -1 || opl->signeridx == signer))
+            continue;
+          attrsize++;
+        }
+
+      if (attrsize) /* We have unsigned attributes - insert them.  */
+        {
+          /* Allocate slots.  */
+          attrarray = xtrycalloc (attrsize, sizeof *attrarray);
+          if (!attrarray)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+
+          for (opl = cms->attribute_list; opl; opl = opl->next)
+            {
+              if (!opl->unprotected)
+                continue;
+              if (!(opl->signeridx == -1 || opl->signeridx == signer))
+                continue;
+
+              attr = _ksba_asn_expand_tree (cms_tree->parse_tree,
+                                      "CryptographicMessageSyntax.Attribute");
+              if (!attr)
+                {
+                  err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+                  goto leave;
+                }
+              n = _ksba_asn_find_node (attr, "Attribute.attrType");
+              if (!n)
+                {
+                  err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+                  goto leave;
+                }
+              err = _ksba_der_store_oid (n, opl->oid);
+              if (err)
+                goto leave;
+              n = _ksba_asn_find_node (attr, "Attribute.attrValues");
+              if (!n || !n->down)
+                {
+                  err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+                  goto leave;
+                }
+              n = n->down;
+              gpgrt_log_printhex (opl->parm, opl->parmlen,
+                                  "signer %d, oid=%s der=", signer, opl->oid);
+              err = _ksba_der_store_set_of (n, opl->parm, opl->parmlen);
+              if (err)
+                goto leave;
+
+              err = _ksba_der_encode_tree (attr, &image, &imagelen);
+              if (err)
+                goto leave;
+
+              assert (attridx < attrsize);
+              attrarray[attridx].root = attr;
+              attr = NULL;
+              attrarray[attridx].image = image;
+              attrarray[attridx].imagelen = imagelen;
+              attridx++;
+            }
+
+          qsort (attrarray, attridx, sizeof (struct attrarray_s),
+                 compare_attrarray);
+          /* Now insert them to an SignerInfo tree.  */
+          n = _ksba_asn_find_node (root, "SignerInfo.unsignedAttrs");
+          if (!n || !n->down)
+            {
+              err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+              goto leave;
+            }
+          for (n = n->down->down; n && n->type != TYPE_SEQUENCE; n = n->right)
+            ;
+          if (!n)
+            {
+              err = gpg_error (GPG_ERR_ELEMENT_NOT_FOUND);
+              goto leave;
+            }
+
+          assert (attridx <= attrsize);
+          for (i=0; i < attridx; i++)
+            {
+              if (i)
+                {
+                  if ( !(n=_ksba_asn_insert_copy (n)))
+                    {
+                      err = gpg_error (GPG_ERR_ENOMEM);
+                      goto leave;
+                    }
+                }
+              err = _ksba_der_copy_tree (n, attrarray[i].root,
+                                         attrarray[i].image);
+              if (err)
+                goto leave;
+              _ksba_asn_release_nodes (attrarray[i].root);
+              free (attrarray[i].image);
+              attrarray[i].root = NULL;
+              attrarray[i].image = NULL;
+            }
+        } /* End inserting unsigned attributes.  */
+
       /* Make the DER encoding and write it out. */
       err = _ksba_der_encode_tree (root, &image, &imagelen);
       if (err)
@@ -3623,8 +3841,14 @@ build_signed_data_rest (ksba_cms_t cms)
  leave:
   ksba_asn_tree_release (cms_tree);
   _ksba_asn_release_nodes (root);
+  _ksba_asn_release_nodes (attr);
   ksba_writer_release (tmpwrt);
   _ksba_der_release (dbld);
+  for (i = 0; i < attridx; i++)
+    {
+      _ksba_asn_release_nodes (attrarray[i].root);
+      xfree (attrarray[i].image);
+    }
   return err;
 }
 

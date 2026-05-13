@@ -26,6 +26,7 @@
 
 #include "../src/ksba.h"
 
+#include "oidtranstbl.h"
 #include "t-common.h"
 
 
@@ -50,6 +51,74 @@ dummy_writer_cb (void *cb_value, const void *buffer, size_t count)
   return 0;
 }
 
+/* Return the description for OID; if no description is available
+   NULL is returned. */
+static const char *
+get_oid_desc (const char *oid)
+{
+  int i;
+
+  if (oid)
+    for (i=0; oidtranstbl[i].oid; i++)
+      if (!strcmp (oidtranstbl[i].oid, oid))
+        return oidtranstbl[i].desc;
+  return NULL;
+}
+
+
+static void
+print_oid_and_desc (const char *oid, int with_lf)
+{
+  const char *s = get_oid_desc (oid);
+  printf ("%s%s%s%s",
+          oid, s?" (":"", s?s:"", s?")":"");
+  if (with_lf)
+    putchar ('\n');
+}
+
+
+
+static gpg_error_t
+dump_one_attribute_set (ksba_cms_t cms, int signer, int unprotected)
+{
+  gpg_error_t err;
+  int idx;
+  char *oid = NULL;
+  unsigned char *der = NULL;
+  size_t derlen;
+  int plen;
+
+  for (idx=0; ; idx++)
+    {
+      ksba_free (oid);
+      ksba_free (der);
+      err = ksba_cms_get_attribute (cms, signer, idx, unprotected,
+                                    &oid, &der, &derlen);
+      if (err)
+        break;
+      plen = printf ("signer %d - %sattr %d: ",
+                     signer, unprotected?"u":"s", idx);
+      print_oid_and_desc (oid, 1);
+      if (der)
+        {
+          printf ("%*s", plen, "");
+          if (derlen > 96 && verbose < 2)
+            {
+              print_hex (der, 96, plen);
+              printf ("\n%*s[... --all prints more]",plen,"");
+            }
+          else
+            print_hex (der, derlen, plen);
+          putchar ('\n');
+        }
+    }
+  ksba_free (oid);
+  ksba_free (der);
+
+  if (gpg_err_code (err) == GPG_ERR_EOF)
+    err = 0;
+  return err;
+}
 
 
 static void
@@ -236,7 +305,7 @@ one_file (const char *fname)
           if (!quiet)
             {
               printf ("signer %d - messageDigest: ", idx);
-              print_hex (dn, n);
+              print_hex (dn, n, 0);
               putchar ('\n');
             }
           ksba_free (dn);
@@ -280,6 +349,23 @@ one_file (const char *fname)
         }
     }
 
+  if (verbose)
+    {
+      int signer;
+
+      for (signer=0; ; signer++)
+        {
+          err = dump_one_attribute_set (cms, signer, 0);
+          if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
+            break;  /* No more signer. */
+          fail_if_err2 (fname, err);
+          err = dump_one_attribute_set (cms, signer, 1);
+          if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
+            break;  /* No more signer. */
+          fail_if_err2 (fname, err);
+        }
+    }
+
   ksba_cms_release (cms);
   ksba_writer_release (w);
   ksba_reader_release (r);
@@ -299,6 +385,11 @@ main (int argc, char **argv)
   if (argc && !strcmp (*argv, "--verbose"))
     {
       verbose = 1;
+      argc--; argv++;
+    }
+  if (argc && !strcmp (*argv, "--all"))
+    {
+      verbose = 2;
       argc--; argv++;
     }
 

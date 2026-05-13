@@ -45,11 +45,11 @@ extern "C" {
 /* The version of this header should match the one of the library.  Do
  * not use this symbol in your application; use assuan_check_version
  * instead.  */
-#define KSBA_VERSION "1.7.0"
+#define KSBA_VERSION "1.8.0"
 
 /* The version number of this header.  It may be used to handle minor
  * API incompatibilities.  */
-#define KSBA_VERSION_NUMBER 0x010700
+#define KSBA_VERSION_NUMBER 0x010800
 
 
 
@@ -369,6 +369,9 @@ gpg_error_t ksba_cms_get_signing_time (ksba_cms_t cms, int idx,
                                        ksba_isotime_t r_sigtime);
 gpg_error_t ksba_cms_get_sigattr_oids (ksba_cms_t cms, int idx,
                                        const char *reqoid, char **r_value);
+gpg_error_t ksba_cms_get_attribute (ksba_cms_t cms, int signer, int idx,
+                                    int unprotected, char **r_oid,
+                                    unsigned char **r_der, size_t *r_derlen);
 ksba_sexp_t ksba_cms_get_sig_val (ksba_cms_t cms, int idx);
 ksba_sexp_t ksba_cms_get_enc_val (ksba_cms_t cms, int idx);
 
