@@ -1,3 +1,37 @@
+2026-05-13  Werner Koch  <wk@gnupg.org>
+
+	Release 1.8.0.
+	+ commit 476c602e2f35f1ddd769a613fa44681df33d0101
+
+
+2026-05-12  Werner Koch  <wk@gnupg.org>
+
+	Implement building of unsigned attributes.
+	+ commit 54d7e3bea86640023e7e9eac25774c2071d8f526
+	* src/cms.c (ksba_cms_get_attribute): Fix tree walking.
+	(build_signed_data_rest): Support unsigned attributes.
+	* src/der-encoder.c (copy_nhdr_and_len): Make context tag work.
+
+	* tests/t-cms-parser.c (one_file): Print also unsigned attributes.
+	  Factor some code out to ...
+	(dump_one_attribute_set): new.
+	(main): New option --all.
+
+	New function ksba_cms_get_attribute.
+	+ commit f40bfced7c07acafae01d502aa0fdd97269d39ac
+	* src/cms.c (ksba_cms_get_attribute): New.
+	* src/visibility.c (ksba_cms_get_attribute): New.
+	* src/ksba.h.in: Add new function.
+	* src/libksba.def:
+	* src/libksba.vers:
+
+	* tests/t-common.h (print_hex): Add arg wrapindent and adjust all
+	  callers.
+	* tests/t-cms-parser.c: Include oidtranstbl.h
+	(get_oid_desc): Copied from cert-basic.c
+	(print_oid_and_desc): Ditto.
+	(one_file): Print all attributes in --verbose mode.
+
 2026-05-07  Werner Koch  <wk@gnupg.org>
 
 	Release 1.7.0.
