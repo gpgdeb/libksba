@@ -4,11 +4,12 @@ Priority: optional
 Maintainer: GnuPG Maintainers <package-maintainers@gnupg.org>
 Build-Depends:
  debhelper-compat (= 13),
+ automake (>= 1.14),
  libgpg-error-dev (>= 1.46),
  texinfo,
 Build-Depends-Indep:
  libgpg-error-mingw-w64-dev,
- mingw-w64,
+ mingw-w64 (>= 11.0.1),
 Rules-Requires-Root: no
 Standards-Version: 4.6.2
 Homepage: https://www.gnupg.org/related_software/libksba/
