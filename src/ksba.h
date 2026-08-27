@@ -45,11 +45,11 @@ extern "C" {
 /* The version of this header should match the one of the library.  Do
  * not use this symbol in your application; use assuan_check_version
  * instead.  */
-#define KSBA_VERSION "1.8.0"
+#define KSBA_VERSION "1.8.1"
 
 /* The version number of this header.  It may be used to handle minor
  * API incompatibilities.  */
-#define KSBA_VERSION_NUMBER 0x010800
+#define KSBA_VERSION_NUMBER 0x010801
 
 
 
