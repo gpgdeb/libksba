@@ -1,3 +1,17 @@
+2026-08-24  Werner Koch  <wk@gnupg.org>
+
+	Release 1.8.1.
+	+ commit 717381422750fb5a3e971d768ba46cae9a01682d
+
+
+2026-07-30  NIIBE Yutaka  <gniibe@fsij.org>
+
+	Fix CMS parser to avoid possible infinite loop.
+	+ commit 06720f9b16a172404f49089cbb6eb95e4344f562
+	* src/cms-parser.c (_ksba_cms_parse_signed_data_part_2): Finish
+	when detecting no progress.
+	(_ksba_cms_parse_enveloped_data_part_1): Likewise.
+
 2026-05-13  Werner Koch  <wk@gnupg.org>
 
 	Release 1.8.0.
